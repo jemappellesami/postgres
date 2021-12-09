@@ -194,26 +194,26 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
 
 
     // Print of frequency histograms
-    // printf("hist_frequency_1 = [");
-    // for (i = 0; i < nhist1; i++)
-    // {
-    //     double frequency = DatumGetFloat8(frequency_hist_1_values[i]) ;
-    //     printf("%f", frequency) ;
-    //     if (i < nhist1 - 1)
-    //         printf(", ");
-    // }
-    // printf("]\n\n");
-    // printf("hist_frequency_2 = [");
-    // for (i = 0; i < nhist2; i++)
-    // {
-    //     double frequency = DatumGetFloat8(frequency_hist_2_values[i]) ;
-    //     printf("%f", frequency) ;
-    //     if (i < nhist2 - 1)
-    //         printf(", ");
-    // }
-    // printf("]\n");
+    printf("hist_frequency_1 = [");
+    for (i = 0; i < nhist1; i++)
+    {
+        double frequency = DatumGetFloat8(frequency_hist_1_values[i]) ;
+        printf("%f", frequency) ;
+        if (i < nhist1 - 1)
+            printf(", ");
+    }
+    printf("]\n\n");
+    printf("hist_frequency_2 = [");
+    for (i = 0; i < nhist2; i++)
+    {
+        double frequency = DatumGetFloat8(frequency_hist_2_values[i]) ;
+        printf("%f", frequency) ;
+        if (i < nhist2 - 1)
+            printf(", ");
+    }
+    printf("]\n");
 
-    // fflush(stdout);
+    fflush(stdout);
 
     // Result : on a bien les largeurs en index 0
 

@@ -492,9 +492,12 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 				lower_bound_value = DatumGetInt16(current_lower.val) ;
 				upper_bound_value = DatumGetInt16(current_upper.val) ;
 
-
 				for (int i = lower_bound_value/width ; i < (upper_bound_value/width +1); i++)
 				{
+					if(upper_bound_value > maxValue*0.8){
+						printf("Upper bound value : %i \t MaxBound : %i\n",upper_bound_value, maxValue) ;
+						printf("Index : %i \n", i) ;
+					}
 					elementary_frequency_hist_value[i]++ ;
 				}
 				
@@ -507,7 +510,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			{
 				frequency_at_index =  elementary_frequency_hist_value[idx-1];
 				frequency_hist_values[idx] = Float8GetDatum(frequency_at_index) ;
-				printf("Frequency for index %i : %f \n", idx, DatumGetFloat8(frequency_hist_values[idx])) ; 
 			}
 			
 			fflush(stdout) ;
