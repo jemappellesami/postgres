@@ -1,0 +1,26 @@
+Yo Sami, 
+voici les étapes pour te connecter à la db : 
+1) tu dois aller dans le lab 5 prendre le fichier demo-big-en.zip que tu extrairas.
+2) une fois extrait tu te connecte à ton compte postgres à l'aide de la commande suivante :
+
+	su - postgres
+	
+3) Quand tu es sur le compte de postgres tu dois te connecter au server et pour ça tu vas faire la commande suivante : 
+
+	/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l logfile start
+	
+4) Enfin quand tu es connecter au serveur tu voudra creer la db et con tu rentrera la commande suivante, cela prendra environ 1 à deux minutes pour ce faire donc attend un peu : 
+	
+	/usr/local/pgsql/bin/psql -d postgres -f /$pathversfichiersami$/demo-big-en-20170815.sql
+	
+5) une fois la db creer pour te connecter tu devra simplement faire :
+
+	/usr/local/pgsql/bin/psql demo
+
+notes complémentaires : 
+-si tu vux tu peux faire un raccourci avec vim pour ne pas devoir a chaque fois mettre le path complet vers psql (lacommande pour lancer la db devient pslq demo, plus sympa 😃)
+-pour te reconnecter à la db une fois tout fait tu dois simplement entrer les 3 commande suivantes (si pas déjà connecter au serveur):
+
+	su - postgres
+	/usr/local/pgsql/bin/pg_ctl -D /usr/local/pgsql/data -l logfile start
+	/usr/local/pgsql/bin/psql demo

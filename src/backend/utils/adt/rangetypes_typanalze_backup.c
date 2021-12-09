@@ -107,53 +107,22 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	int			empty_cnt = 0;
 	int			range_no;
 	int			slot_idx;
-	int			num_bins = stats->attr->attstattarget; // 100 pour notre cas
+	int			num_bins = stats->attr->attstattarget;
 	int			num_hist;
-
-	// Maximum value in the range column, comes from DatumGetInt16
-	int16 		maxValue ; // [frequency histogram]
-	
 	float8	   *lengths,
-				*frequencies; // [frequency histogram]
+				*means;
 	RangeBound *lowers,
 			   *uppers;
 	double		total_width = 0;
-
-	printf("SampleRows : %d\n", samplerows) ;
-	fflush(stdout) ;
-
 
 	/* Allocate memory to hold range bounds and lengths of the sample ranges. */
 	lowers = (RangeBound *) palloc(sizeof(RangeBound) * samplerows);
 	uppers = (RangeBound *) palloc(sizeof(RangeBound) * samplerows);
 	lengths = (float8 *) palloc(sizeof(float8) * samplerows);
-	frequencies = (float8 *) palloc(sizeof(float8) * samplerows);
-	
-	printf("Number of bins : %d\n", num_bins) ;
-	fflush(stdout) ;
-
-	// [frequency histogram]
-	RangeBound 	max_bound;
-	RangeType *initRange ;
-	RangeBound	initLower,
-				initUpper;
-	Datum initValue ;
-	bool initIsnull,
-		initEmpty ;
-
-	initValue = fetchfunc(stats, 0, &initIsnull);
-
-	initRange = DatumGetRangeTypeP(initValue);
-
-	range_deserialize(typcache, initRange, &initLower, &max_bound, &initEmpty);
-
-
-	int16 initialMax = DatumGetInt16(max_bound.val) ;
-	printf("Initial maximum value : %d\n", initialMax) ;
-	fflush(stdout) ;
+	means = (float8 *) palloc(sizeof(float8) * samplerows);
 
 	/* Loop over the sample ranges. */
-	for (range_no = 1; range_no < samplerows; range_no++)
+	for (range_no = 0; range_no < samplerows; range_no++)
 	{
 		Datum		value;
 		bool		isnull,
@@ -161,9 +130,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		RangeType  *range;
 		RangeBound	lower,
 					upper;
-		float8		length,
-					frequency; // [frequency histogram]
-		int16 currentMax, currentUpperBound ;
+		float8		length;
 
 		vacuum_delay_point();
 
@@ -191,20 +158,19 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			/* Remember bounds and length for further usage in histograms */
 			lowers[non_empty_cnt] = lower;
 			uppers[non_empty_cnt] = upper;
-
-			// [frequency histogram]
-			currentUpperBound = DatumGetInt16(upper.val) ;
-			currentMax = DatumGetInt16(max_bound.val) ;
-
-			if(currentUpperBound > currentMax){
-				max_bound = upper ;
-			}
 			
 
-			// On a les bound min et max
-
 			
-					
+			// printf("Lower : %d\n", lower) ;
+			// fflush(stdout) ;
+			// printf("Upper : %d\n", upper) ;
+			// fflush(stdout) ;
+			// printf("Total width increment : %d\n", VARSIZE_ANY(DatumGetPointer(value))) ;
+			// fflush(stdout) ;
+			
+			// printf("%d\n", lower) ;
+			// fflush(stdout) ;
+			
 
 			if (lower.infinite || upper.infinite)
 			{
@@ -220,9 +186,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 				length = DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
 														  typcache->rng_collation,
 														  upper.val, lower.val));
-				// printf("%d\n", upper.val - lower.val) ;
-				// fflush(stdout) ;
-						  
 			}
 			else
 			{
@@ -233,7 +196,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			// here we fill the length array
 			lengths[non_empty_cnt] = length;
 
-
 			
 			non_empty_cnt++;
 		}
@@ -243,11 +205,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		non_null_cnt++;
 	}
 
-	// [frequency histogram]
-	maxValue = DatumGetInt16(max_bound.val) ;
-	printf("Final maximum : %d \n", maxValue) ;
-	fflush(stdout) ;
-
 
 	slot_idx = 0;
 
@@ -256,15 +213,11 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	{
 		Datum	   *bound_hist_values;
 		Datum	   *length_hist_values;
-		Datum	   *frequency_hist_values;
 		int			pos,
 					posfrac,
 					delta,
 					deltafrac,
 					i;
-		// Attention à ne pas mettre "double" !!
-		int  	width; // [frequency histogram]
-
 		MemoryContext old_cxt;
 		float4	   *emptyfrac;
 
@@ -298,7 +251,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			if (num_hist > num_bins)
 				num_hist = num_bins + 1;
 
-
 			bound_hist_values = (Datum *) palloc(num_hist * sizeof(Datum));
 
 			/*
@@ -314,9 +266,10 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			 */
 			delta = (non_empty_cnt - 1) / (num_hist - 1);
 			deltafrac = (non_empty_cnt - 1) % (num_hist - 1);
-
-
-
+			// printf("[BOUND] Delta : %d\n", delta) ;
+			// fflush(stdout) ;
+			// printf("[BOUND] Delta frac : %d\n", deltafrac) ;
+			// fflush(stdout) ;
 			pos = posfrac = 0;
 
 			for (i = 0; i < num_hist; i++)
@@ -328,6 +281,16 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 																	   &uppers[pos],
 																	   false));
 
+
+				// if(i != 0){
+				// 	printf("Bound histogram %i s value : %d\n", i, PointerGetDatum(range_serialize(typcache,
+				// 													   &lowers[pos],
+				// 													   &uppers[pos],
+				// 													   false)) - bound_hist_values[i-1]) ;
+				// 	fflush(stdout) ;										
+
+				// }
+
 				pos += delta;
 				posfrac += deltafrac;
 				if (posfrac >= (num_hist - 1))
@@ -336,6 +299,10 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 					pos++;
 					posfrac -= (num_hist - 1);
 				}
+				// printf("[BOUND] pos at step %i\t : %d\n", i, pos) ;
+				// fflush(stdout) ;
+				// printf("[BOUND] posfrac at step %i\t : %d\n", i, posfrac) ;
+				// fflush(stdout) ;
 			}
 			
 
@@ -380,16 +347,20 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			 * the integral and fractional parts of the sum separately.
 			 */
 			delta = (non_empty_cnt - 1) / (num_hist - 1);
-			// pour un tableau de 100 000 lignes, num_hist sera 101 et alors delta entier sera 999
 			deltafrac = (non_empty_cnt - 1) % (num_hist - 1);
-			// la partie décimale de delta sera de 99
-			
+			// printf("[LENGTH] Delta : %d\n ", delta) ;
+			// fflush(stdout) ;
+			// printf("[LENGTH] Delta frac : %d\n ", deltafrac) ;
+			// fflush(stdout) ;
 			pos = posfrac = 0;
 
 			for (i = 0; i < num_hist; i++)
 			{
 				length_hist_values[i] = Float8GetDatum(lengths[pos]);
-
+				// if(i >0){
+				// 	printf("Length histogram %i s value : %d\n", length_hist_values[i]) ;
+				// 	fflush(stdout) ;
+				// }
 				pos += delta;
 				posfrac += deltafrac;
 				if (posfrac >= (num_hist - 1))
@@ -398,9 +369,103 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 					pos++;
 					posfrac -= (num_hist - 1);
 				}
+				// printf("[LENGTH] pos at step %i \t : %d\n", i, pos) ;
+				// fflush(stdout) ;
+				// printf("[LENGTH] posfrac at step %i \t : %d\n", i, posfrac) ;
+				// fflush(stdout) ;
 			}
-			fflush(stdout) ;
-			
+		}
+		else
+		{
+			/*
+			 * Even when we don't create the histogram, store an empty array
+			 * to mean "no histogram". We can't just leave stavalues NULL,
+			 * because get_attstatsslot() errors if you ask for stavalues, and
+			 * it's NULL. We'll still store the empty fraction in stanumbers.
+			 */
+			length_hist_values = palloc(0);
+			num_hist = 0;
+		}
+		stats->staop[slot_idx] = Float8LessOperator;
+		stats->stacoll[slot_idx] = InvalidOid;
+		stats->stavalues[slot_idx] = length_hist_values;
+		stats->numvalues[slot_idx] = num_hist;
+		stats->statypid[slot_idx] = FLOAT8OID;
+		stats->statyplen[slot_idx] = sizeof(float8);
+		stats->statypbyval[slot_idx] = FLOAT8PASSBYVAL;
+		stats->statypalign[slot_idx] = 'd';
+
+		/* Store the fraction of empty ranges */
+		emptyfrac = (float4 *) palloc(sizeof(float4));
+		*emptyfrac = ((double) empty_cnt) / ((double) non_null_cnt);
+		stats->stanumbers[slot_idx] = emptyfrac;
+		stats->numnumbers[slot_idx] = 1;
+
+		stats->stakind[slot_idx] = STATISTIC_KIND_RANGE_LENGTH_HISTOGRAM;
+		slot_idx++;
+
+		MemoryContextSwitchTo(old_cxt);
+
+
+
+
+		////////// Lets create another kind of statistics
+		Datum	   *sami_hist_values;
+		/*
+		 * Generate a sami-mean histogram slot entry if there are at least two
+		 * values.
+		 */
+		if (non_empty_cnt >= 2)
+		{
+			/*
+			 * Ascending sort of range lengths for further filling of
+			 * histogram
+			 */
+			qsort(means, non_empty_cnt, sizeof(float8), float8_qsort_cmp);
+
+			num_hist = non_empty_cnt;
+			if (num_hist > num_bins)
+				num_hist = num_bins + 1;
+
+			length_hist_values = (Datum *) palloc(num_hist * sizeof(Datum));
+
+			/*
+			 * The object of this loop is to copy the first and last lengths[]
+			 * entries along with evenly-spaced values in between. So the i'th
+			 * value is lengths[(i * (nvals - 1)) / (num_hist - 1)]. But
+			 * computing that subscript directly risks integer overflow when
+			 * the stats target is more than a couple thousand.  Instead we
+			 * add (nvals - 1) / (num_hist - 1) to pos at each step, tracking
+			 * the integral and fractional parts of the sum separately.
+			 */
+			delta = (non_empty_cnt - 1) / (num_hist - 1);
+			deltafrac = (non_empty_cnt - 1) % (num_hist - 1);
+			// printf("[LENGTH] Delta : %d\n ", delta) ;
+			// fflush(stdout) ;
+			// printf("[LENGTH] Delta frac : %d\n ", deltafrac) ;
+			// fflush(stdout) ;
+			pos = posfrac = 0;
+
+			for (i = 0; i < num_hist; i++)
+			{
+				length_hist_values[i] = Float8GetDatum(lengths[pos]);
+				// if(i >0){
+				// 	printf("Length histogram %i s value : %d\n", length_hist_values[i]) ;
+				// 	fflush(stdout) ;
+				// }
+				pos += delta;
+				posfrac += deltafrac;
+				if (posfrac >= (num_hist - 1))
+				{
+					/* fractional part exceeds 1, carry to integer part */
+					pos++;
+					posfrac -= (num_hist - 1);
+				}
+				// printf("[LENGTH] pos at step %i \t : %d\n", i, pos) ;
+				// fflush(stdout) ;
+				// printf("[LENGTH] posfrac at step %i \t : %d\n", i, posfrac) ;
+				// fflush(stdout) ;
+			}
 		}
 		else
 		{
@@ -432,126 +497,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		slot_idx++;
 
 
-		/*
-		 * Generate a [frequency histogram] slot entry if there are at least two
-		 * values.
-		 * 
-		 * The frequency histogram carries two informations :
-		 * - The width of each bin : stored at index 0
-		 * - The values of the frequency for each bin : stored in the indexes 1 to (num_hist+1)
-		 */
-		if (non_empty_cnt >= 2)
-		{
-			
-			// Penser au cas où la premiere colonne a 10 éléments et l'autre 1000
-			num_hist = non_empty_cnt;
-			if (num_hist > num_bins)
-				num_hist = num_bins + 1;
-
-
-			
-			
-			frequency_hist_values = (Datum *) palloc((num_hist+1) * sizeof(Datum));
-			float8* elementary_frequency_hist_value = palloc(num_hist*sizeof(int)) ;
-			float8 frequency_at_index ;
-			
-			for (int i = 0; i < num_hist; i++)
-			{
-				elementary_frequency_hist_value[i] = 0 ;
-			}
-			
-			width = maxValue/num_hist + 1 ;
-
-
-			printf("Width : %d\n", width) ;
-			fflush(stdout) ;
-			
-
-			for (int range_no = 0; range_no < samplerows ; range_no++)
-			{
-				
-				// [frequency histogram]
-				RangeType *current_range ;
-				RangeBound	current_lower,
-							current_upper;
-				int16 lower_bound_value, upper_bound_value ;
-
-
-
-				Datum current_value ;
-				bool current_isnull,
-					current_isEmpty ;
-
-				current_value = fetchfunc(stats, range_no, &initIsnull);
-
-				current_range = DatumGetRangeTypeP(current_value);
-
-				range_deserialize(typcache, current_range, &current_lower, &current_upper, &current_isEmpty);
-				
-				// on a bien nos range
-				lower_bound_value = DatumGetInt16(current_lower.val) ;
-				upper_bound_value = DatumGetInt16(current_upper.val) ;
-
-
-				for (int i = lower_bound_value/width ; i < (upper_bound_value/width +1); i++)
-				{
-					elementary_frequency_hist_value[i]++ ;
-				}
-				
-			}
-
-			// Store the width pointer in the first element of the histogram
-			frequency_hist_values[0] = Float8GetDatum(width) ;
-			
-			for (int idx = 1; idx < num_hist+1; idx++)
-			{
-				frequency_at_index =  elementary_frequency_hist_value[idx-1];
-				frequency_hist_values[idx] = Float8GetDatum(frequency_at_index) ;
-				printf("Frequency for index %i : %f \n", idx, DatumGetFloat8(frequency_hist_values[idx])) ; 
-			}
-			
-			fflush(stdout) ;
-		}
-		else
-		{
-			/*
-			 * Even when we don't create the histogram, store an empty array
-			 * to mean "no histogram". We can't just leave stavalues NULL,
-			 * because get_attstatsslot() errors if you ask for stavalues, and
-			 * it's NULL. We'll still store the empty fraction in stanumbers.
-			 */
-			frequency_hist_values = palloc(0);
-			num_hist = 0;
-		}
-
-		
-
-		stats->staop[slot_idx] = Float8LessOperator;
-		stats->stacoll[slot_idx] = InvalidOid;
-		stats->stavalues[slot_idx] = frequency_hist_values;
-		stats->numvalues[slot_idx] = num_hist+1; // we add 1 for the width value at the index 0
-		stats->statypid[slot_idx] = FLOAT8OID;
-		stats->statyplen[slot_idx] = sizeof(float8);
-		stats->statypbyval[slot_idx] = FLOAT8PASSBYVAL;
-		stats->statypalign[slot_idx] = 'd';
-
-		/* Store the fraction of empty ranges */
-		emptyfrac = (float4 *) palloc(sizeof(float4));
-		*emptyfrac = ((double) empty_cnt) / ((double) non_null_cnt);
-		stats->stanumbers[slot_idx] = emptyfrac;
-		stats->numnumbers[slot_idx] = 1;
-
-		stats->stakind[slot_idx] = STATISTIC_KIND_FREQUENCY_HISTOGRAM;
-		slot_idx++;
-
-		
-
-		MemoryContextSwitchTo(old_cxt);
-
-
-
-
-		
 	}
 	else if (null_cnt > 0)
 	{

@@ -106,6 +106,23 @@ get_float8_infinity(void)
 #endif
 }
 
+static inline int16
+get_int16_infinity(void)
+{
+#ifdef INFINITY
+	/* C99 standard way */
+	return (int16) INFINITY;
+#else
+
+	/*
+	 * On some platforms, HUGE_VAL is an infinity, elsewhere it's just the
+	 * largest normal int16.  We assume forcing an overflow will get us a
+	 * true infinity.
+	 */
+	return (int16) (HUGE_VAL * HUGE_VAL);
+#endif
+}
+
 static inline float4
 get_float4_nan(void)
 {

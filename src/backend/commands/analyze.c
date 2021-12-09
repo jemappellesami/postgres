@@ -1786,6 +1786,10 @@ compute_trivial_stats(VacAttrStatsP stats,
 		Datum		value;
 		bool		isnull;
 
+		printf("%d", i) ;
+		fflush(stdout) ;
+		
+		
 		vacuum_delay_point();
 
 		value = fetchfunc(stats, i, &isnull);
