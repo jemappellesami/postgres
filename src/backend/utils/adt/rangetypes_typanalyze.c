@@ -494,10 +494,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 
 				for (int i = lower_bound_value/width ; i < (upper_bound_value/width +1); i++)
 				{
-					if(upper_bound_value > maxValue*0.8){
-						printf("Upper bound value : %i \t MaxBound : %i\n",upper_bound_value, maxValue) ;
-						printf("Index : %i \n", i) ;
-					}
 					elementary_frequency_hist_value[i]++ ;
 				}
 				
@@ -549,8 +545,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		
 
 		MemoryContextSwitchTo(old_cxt);
-
-
 
 
 		

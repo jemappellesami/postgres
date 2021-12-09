@@ -117,6 +117,7 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     Oid         collation = PG_GET_COLLATION();
 
     double      selec = 0.005;
+    double      cardinality_estimation = 0; // number of rows that will be estimated
 
     VariableStatData vardata1;
     VariableStatData vardata2;
@@ -125,8 +126,8 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
                     sslot2;
     int         nhist1, nhist2;
     
-    Datum     *frequency_hist_1_values;
-    Datum     *frequency_hist_2_values;
+    Datum     *frequency_hist_smallest_values;
+    Datum     *frequency_hist_largest_values;
     int         i;
     Form_pg_statistic stats1 = NULL,
                         stats2 = NULL ;
@@ -175,8 +176,8 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     nhist2 = sslot2.nvalues;
     
     
-    frequency_hist_1_values = (Datum *) palloc(sizeof(Datum) * nhist1);
-    frequency_hist_2_values = (Datum *) palloc(sizeof(Datum) * nhist2);
+    frequency_hist_smallest_values = (Datum *) palloc(sizeof(Datum) * nhist1);
+    frequency_hist_largest_values = (Datum *) palloc(sizeof(Datum) * nhist2);
 
 
     double rows1 = vardata1.rel->rows ;
@@ -185,19 +186,90 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
 
 
 
-    for (i = 0 ; i < nhist1 ; i ++){
-        frequency_hist_1_values[i] = sslot1.values[i] ;
+
+
+    double width_1 = sslot1.values[0];
+    double width_2 = sslot2.values[0];
+    double smallest_width ;
+    double biggest_width ;
+    double smallest_length ;
+    double increment ;
+
+
+    // Identify which histogram is smaller, and fill histograms
+    // 1. width_1 > width_2
+    if(width_1 > width_2){
+        smallest_width = width_2 ;
+        biggest_width = width_1 ;
+        smallest_length = nhist2-1 ;
+        increment = 1 ;
+
+        // Histogram filling
+        for (i = 0 ; i < nhist2-1 ; i ++){
+            frequency_hist_smallest_values[i] = sslot2.values[i+1] ;
+        }
+        for (i = 0 ; i < nhist1-1 ; i ++){
+            frequency_hist_largest_values[i] = sslot1.values[i+1] ;
+        }
+        // Histogram is filled
     }
-    for (i = 0 ; i < nhist2 ; i ++){
-        frequency_hist_2_values[i] = sslot2.values[i] ;
+    // 2. width_2 > width_1
+    else if (width_2 > width_1){
+        smallest_width = width_1 ;
+        biggest_width = width_2 ;
+        smallest_length = nhist1-1 ;
+        increment = 1 ;
+
+        // Histogram filling
+        for (i = 0 ; i < nhist1-1 ; i ++){
+            frequency_hist_smallest_values[i] = sslot1.values[i+1] ;
+        }
+        for (i = 0 ; i < nhist2-1 ; i ++){
+            frequency_hist_largest_values[i] = sslot2.values[i+1] ;
+        }
+        // Histogram is filled
+
     }
+    // 3. width_2 == width_1
+    else{
+        smallest_width = width_1 ;
+        biggest_width = width_1 ;
+        smallest_length = nhist1-1 ;
+        increment = 0 ;
+
+        // Histogram filling
+        for (i = 0 ; i < nhist1-1 ; i ++){
+            frequency_hist_smallest_values[i] = sslot1.values[i+1] ;
+        }
+        for (i = 0 ; i < nhist2-1 ; i ++){
+            frequency_hist_largest_values[i] = sslot2.values[i+1] ;
+        }
+        // Histogram is filled
+    }
+
+    // the histograms are properly sorted 
+
+    //
+    int delta = smallest_width/biggest_width ;
+    for (int i = 0; i < smallest_length; i++)
+    {
+        int begin = i*delta ;
+        int end = (i+1)* delta ;
+        for (int j = begin; j < end + increment; j++)
+        {
+            /* code */
+        }
+        
+    }
+    
+
 
 
     // Print of frequency histograms
     printf("hist_frequency_1 = [");
     for (i = 0; i < nhist1; i++)
     {
-        double frequency = DatumGetFloat8(frequency_hist_1_values[i]) ;
+        double frequency = DatumGetFloat8(frequency_hist_smallest_values[i]) ;
         printf("%f", frequency) ;
         if (i < nhist1 - 1)
             printf(", ");
@@ -206,7 +278,7 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     printf("hist_frequency_2 = [");
     for (i = 0; i < nhist2; i++)
     {
-        double frequency = DatumGetFloat8(frequency_hist_2_values[i]) ;
+        double frequency = DatumGetFloat8(frequency_hist_largest_values[i]) ;
         printf("%f", frequency) ;
         if (i < nhist2 - 1)
             printf(", ");
@@ -217,8 +289,8 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
 
     // Result : on a bien les largeurs en index 0
 
-    pfree(frequency_hist_1_values);
-    pfree(frequency_hist_2_values);
+    pfree(frequency_hist_smallest_values);
+    pfree(frequency_hist_largest_values);
 
     free_attstatsslot(&sslot1);
     free_attstatsslot(&sslot2);
