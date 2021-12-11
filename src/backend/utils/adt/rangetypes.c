@@ -1835,8 +1835,6 @@ int
 range_cmp_bounds(TypeCacheEntry *typcache, const RangeBound *b1, const RangeBound *b2)
 {
 	int32		result;
-	printf("Je rentre dans range_cmp_bounds\n") ;
-	printf("Bounds de valeur %i et %i \n", DatumGetInt16(b1->val), DatumGetInt16(b2->val)) ;
 	/*
 	 * First, handle cases involving infinity, which don't require invoking
 	 * the comparison proc.
@@ -1857,7 +1855,6 @@ range_cmp_bounds(TypeCacheEntry *typcache, const RangeBound *b1, const RangeBoun
 	else if (b2->infinite)
 		return b2->lower ? 1 : -1;
 
-	printf("Je suis arrivé là\n") ;
 	/*
 	 * Both boundaries are finite, so compare the held values.
 	 */

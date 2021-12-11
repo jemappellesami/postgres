@@ -111,7 +111,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	int			num_hist;
 
 	// Maximum value in the range column, comes from DatumGetInt16
-	int32 		maxValue ; // [frequency histogram]
 	
 	float8	   *lengths,
 				*frequencies; // [frequency histogram]
@@ -129,14 +128,13 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	lengths = (float8 *) palloc(sizeof(float8) * samplerows);
 	frequencies = (float8 *) palloc(sizeof(float8) * samplerows);
 	
-	printf("Number of bins : %d\n", num_bins) ;
 	fflush(stdout) ;
 
 	// [frequency histogram]
-	RangeBound 	max_bound;
+	RangeBound 	max_bound,
+				min_bound;
 	RangeType *initRange ;
-	RangeBound	initLower,
-				initUpper;
+	
 	Datum initValue ;
 	bool initIsnull,
 		initEmpty ;
@@ -145,11 +143,13 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 
 	initRange = DatumGetRangeTypeP(initValue);
 
-	range_deserialize(typcache, initRange, &initLower, &max_bound, &initEmpty);
+	range_deserialize(typcache, initRange, &min_bound, &max_bound, &initEmpty);
 
 
 	int16 initialMax = DatumGetInt16(max_bound.val) ;
 	printf("Initial maximum value : %d\n", initialMax) ;
+	int16 initialMin = DatumGetInt16(min_bound.val) ;
+	printf("Initial minimum value : %d\n", initialMin) ;
 	fflush(stdout) ;
 
 	/* Loop over the sample ranges. */
@@ -163,7 +163,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 					upper;
 		float8		length,
 					frequency; // [frequency histogram]
-		int16 currentMax, currentUpperBound ;
 
 		vacuum_delay_point();
 
@@ -193,15 +192,12 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			uppers[non_empty_cnt] = upper;
 
 			// [frequency histogram]
-			currentUpperBound = DatumGetInt16(upper.val) ;
-			currentMax = DatumGetInt16(max_bound.val) ;
 
 			if(range_cmp_bounds(typcache, &upper, &max_bound) > 0){
-				printf("upper, %d\n", DatumGetInt32(upper.val)); // Put 32 bits or else it will not be able to compute for big values
-				printf("max_bound, %d\n", DatumGetInt32(max_bound.val));
-				printf("compare %d\n", range_cmp_bounds(typcache, &upper, &max_bound))  ;
 				max_bound = upper ;
-				fflush(stdout);
+			}
+			if(range_cmp_bounds(typcache, &lower, &min_bound) < 0){
+				min_bound = lower ;
 			}
 			// if(currentUpperBound > currentMax){
 			// 	max_bound = upper ;
@@ -251,8 +247,8 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	}
 
 	// [frequency histogram]
-	maxValue = DatumGetInt32(max_bound.val) ;
-	printf("Final maximum : %d \n", maxValue) ;
+	printf("Final maximum : %d \n", DatumGetInt32(max_bound.val)) ;
+	printf("Final minimum : %d \n", DatumGetInt32(min_bound.val)) ;
 	fflush(stdout) ;
 
 
@@ -270,7 +266,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 					deltafrac,
 					i;
 		// Attention à ne pas mettre "double" !!
-		int  	width; // [frequency histogram]
+		float8  	width; // [frequency histogram]
 
 		MemoryContext old_cxt;
 		float4	   *emptyfrac;
@@ -296,11 +292,12 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		if (non_empty_cnt >= 2)
 		{
 			/* Sort bound values */
+			// Le minimum est dans lowers[0] !!
 			qsort_arg(lowers, non_empty_cnt, sizeof(RangeBound),
 					  range_bound_qsort_cmp, typcache);
 			qsort_arg(uppers, non_empty_cnt, sizeof(RangeBound),
 					  range_bound_qsort_cmp, typcache);
-
+			fflush(stdout) ;
 			num_hist = non_empty_cnt;
 			if (num_hist > num_bins)
 				num_hist = num_bins + 1;
@@ -446,6 +443,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 		 * The frequency histogram carries two informations :
 		 * - The width of each bin : stored at index 0
 		 * - The values of the frequency for each bin : stored in the indexes 1 to (num_hist+1)
+		 * - The max bound : at index 1
 		 */
 		if (non_empty_cnt >= 2)
 		{
@@ -455,24 +453,32 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			if (num_hist > num_bins)
 				num_hist = num_bins + 1;
 
+			printf("Number of bins : %d\n", num_hist) ;
 
 			
 			
 			frequency_hist_values = (Datum *) palloc((num_hist+1) * sizeof(Datum));
-			float8* elementary_frequency_hist_value = palloc(num_hist*sizeof(int)) ;
-			float8 frequency_at_index ;
+			float8* elementary_frequency_hist_value = palloc(num_hist*sizeof(float8)) ;
+			float8 frequency_at_index,
+					column_length ;
 			
 			for (int i = 0; i < num_hist; i++)
 			{
 				elementary_frequency_hist_value[i] = 0 ;
 			}
 			
-			width = maxValue/num_hist + 1 ;
 
-
-			printf("Width : %d\n", width) ;
+			column_length = DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
+														  typcache->rng_collation,
+														  max_bound.val, min_bound.val)); 
+			printf("Column length : %f\n", column_length) ;
+			width = div(column_length,num_hist).quot  ;
+			// Round to upper
+			// if(div(column_length, num_hist).rem != 0){
+				width ++ ;
+			// }
+			printf("Width : %f \n", width) ;
 			fflush(stdout) ;
-			
 
 			for (int range_no = 0; range_no < samplerows ; range_no++)
 			{
@@ -481,7 +487,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 				RangeType *current_range ;
 				RangeBound	current_lower,
 							current_upper;
-				int16 lower_bound_value, upper_bound_value ;
 
 
 
@@ -489,20 +494,33 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 				bool current_isnull,
 					current_isEmpty ;
 
+				
+
 				current_value = fetchfunc(stats, range_no, &initIsnull);
 
 				current_range = DatumGetRangeTypeP(current_value);
 
 				range_deserialize(typcache, current_range, &current_lower, &current_upper, &current_isEmpty);
 				
+				float8 compLower, compUpper ;
+
+				compLower = DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
+														  typcache->rng_collation,
+														  max_bound.val, current_lower.val)); 
+				compUpper = DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
+														  typcache->rng_collation,
+														  max_bound.val, current_upper.val)); 
+
+														  
+				// les upper ne couvrent pas tout : sans doute une erreur de propagation d'arrondi
+				// theoriquement entre 0 et 100, mais possible que les arrondis se propagent de maniere enervee
 				// on a bien nos range
-				lower_bound_value = DatumGetInt16(current_lower.val) ;
-				upper_bound_value = DatumGetInt16(current_upper.val) ;
+				
 				
 
 				// Integer division to set bound to increment the histogram
-				int delta_low = div(lower_bound_value, width).quot ;
-				div_t delta_up_div = div(upper_bound_value, width) ;
+				int delta_low = div((column_length-compLower), width).quot ;
+				div_t delta_up_div = div((column_length-compUpper), width) ;
 				int delta_up = delta_up_div.quot ;
 				int rem = delta_up_div.rem; 
 
@@ -530,11 +548,12 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			// printf("hist_frequency_1 = [");
 			// for (i = 0; i < num_hist+1; i++)
 			// {
-			// 	double frequency = DatumGetFloat8(frequency_hist_values[i]) ;
-			// 	printf("%f\n", frequency) ;
+			// 	int frequency = DatumGetFloat8(frequency_hist_values[i]) ;
+			// 	printf("%d", frequency) ;
 			// 	if (i < num_hist+1 - 1)
 			// 		printf(", ");
 			// }
+			// printf("]\n") ;
 			
 			
 			
