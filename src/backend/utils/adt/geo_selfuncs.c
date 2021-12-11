@@ -117,7 +117,7 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     Oid         collation = PG_GET_COLLATION();
 
     double      selec = 0.005;
-    double      cardinality_estimation = 0; // number of rows that will be estimated
+    float8      cardinality_estimation = 0; // number of rows that will be estimated
 
     VariableStatData vardata1, 
                 vardata2; 
@@ -134,6 +134,10 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     
     // Size of the frequency histograms : also contains the width => to decrement of 1 when using
     int         nhist1, nhist2;
+    // Bounds that will be compared to know which one is the smallest (important)
+    RangeBound min_bound1, min_bound2 ;
+    // Useless bounds that need to be here for deserialization
+    RangeBound upper_bound1, upper_bound2 ;
     
 
 
@@ -211,180 +215,91 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
         }
     }
 
+    // Get size of the histograms (careful to decrement 1 when needed !)
     nhist1 = sslot_freq1.nvalues;
     nhist2 = sslot_freq2.nvalues;
     
-    
-
-
+    // Cartesian product cardinality
     double rows1 = vardata1.rel->rows ;
     double rows2 = vardata2.rel->rows ;
     double cartesian_product_cardinality = rows1*rows2 ;
 
+    range_deserialize(typcache, DatumGetRangeTypeP(sslot_bound1.values[0]),
+        &min_bound1, &upper_bound1, &empty) ;
+    if (empty)
+        elog(ERROR, "bounds histogram contains an empty range");
 
+    range_deserialize(typcache, DatumGetRangeTypeP(sslot_bound2.values[0]),
+        &min_bound2, &upper_bound2, &empty) ;
+    if (empty)
+        elog(ERROR, "bounds histogram contains an empty range");
 
 
 
     float8 width_1 = DatumGetFloat8(sslot_freq1.values[0]);
     float8 width_2 = DatumGetFloat8(sslot_freq2.values[0]);
-    int nhist_smallest, nhist_largest ;
-    double smallest_width ;
-    double biggest_width ;
-    double smallest_length ;
-    double increment ;
 
 
-    // Identify which histogram is smaller, and fill histograms
-    // 1. width_1 > width_2
-    if(width_1 > width_2){
-        frequency_hist_smallest_values = (Datum *) palloc(sizeof(Datum) * (nhist2-1));
-        frequency_hist_largest_values = (Datum *) palloc(sizeof(Datum) * (nhist1-1));
-        smallest_width = width_2 ;
-        biggest_width = width_1 ;
-        nhist_largest = nhist1-1 ;
-        nhist_smallest = nhist2-1 ;
-        smallest_length = nhist2-1 ;
-        increment = 1 ;
-
-        // Histogram filling
-        for (i = 0 ; i < nhist2-1 ; i ++){
-            frequency_hist_smallest_values[i] = sslot2.values[i+1] ;
-        }
-        for (i = 0 ; i < nhist1-1 ; i ++){
-            frequency_hist_largest_values[i] = sslot1.values[i+1] ;
-        }
-        // Histogram is filled
-    }
-    // 2. width_2 > width_1
-    else if (width_2 > width_1){
-        frequency_hist_smallest_values = (Datum *) palloc(sizeof(Datum) * (nhist1-1));
-        frequency_hist_largest_values = (Datum *) palloc(sizeof(Datum) * (nhist2-1));
-        smallest_width = width_1 ;
-        biggest_width = width_2 ;
-        nhist_largest = nhist2-1 ;
-        nhist_smallest = nhist1-1 ;
-        smallest_length = nhist1-1 ;
-        increment = 1 ;
-
-        // Histogram filling
-        for (i = 0 ; i < nhist1-1 ; i ++){
-            frequency_hist_smallest_values[i] = sslot1.values[i+1] ;
-        }
-        for (i = 0 ; i < nhist2-1 ; i ++){
-            frequency_hist_largest_values[i] = sslot2.values[i+1] ;
-        }
-        // Histogram is filled
-
-    }
-    // 3. width_2 == width_1
-    else{
-        frequency_hist_smallest_values = (Datum *) palloc(sizeof(Datum) * (nhist1-1));
-        frequency_hist_largest_values = (Datum *) palloc(sizeof(Datum) * (nhist2-1));
-        smallest_width = width_1 ;
-        biggest_width = width_1 ;
-        nhist_largest = nhist2-1 ;
-        nhist_smallest = nhist1-1 ;
-        smallest_length = nhist1-1 ;
-        increment = 0 ;
-
-        // Histogram filling
-        for (i = 0 ; i < nhist1-1 ; i ++){
-            frequency_hist_smallest_values[i] = sslot1.values[i+1] ;
-        }
-        for (i = 0 ; i < nhist2-1 ; i ++){
-            frequency_hist_largest_values[i] = sslot2.values[i+1] ;
-        }
-        // Histogram is filled
-    }
-
-    // the histograms are properly sorted 
-
-    //
-    float8 delta = smallest_width/biggest_width ;
-
-    for (int i = 0; i < smallest_length; i++)
-    {
-        int begin = i*delta ;
-        int end = (i+1)* delta ;
-        for (int j = begin; j < end + increment; j++)
-        {
-            double a = DatumGetFloat8(frequency_hist_smallest_values[i]) ;
-            double b = DatumGetFloat8(frequency_hist_largest_values[j]) ;
-            double c = a*b ;
-            cardinality_estimation += c ;
-        }
+    // Confirmation of what we just did
+    // printf("Width of hist of table 1 : %f\n", width_1) ;
+    // printf("Width of hist of table 2 : %f\n", width_2) ;
+    // printf("Minimum of table 1 : %d \n", DatumGetInt16(min_bound1.val)) ;
+    // printf("Minimum of table 2 : %d \n", DatumGetInt16(min_bound2.val)) ;
+    // fflush(stdout) ;
         
+    float8 distance = abs(DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
+														  typcache->rng_collation,
+														  min_bound1.val, min_bound2.val)));
+
+    // Compare the minima
+    if(range_cmp_bounds(typcache, &min_bound1, &min_bound2) < 0){
+        // minbound 1 < minbound2, so table 1 has the minimum value
+        frequency_hist_smallest_min = (Datum *) palloc(sizeof(Datum) * (nhist1-1));
+        frequency_hist_biggest_min = (Datum *) palloc(sizeof(Datum) * (nhist2-1));
+
+        float8 small_width = width_1 ;
+        float8 biggest_width = width_2 ;
+        // Histogram filling
+        for (i = 0 ; i < nhist1-1 ; i ++){
+            frequency_hist_smallest_min[i] = sslot_freq1.values[i+1] ;
+        }
+        for (i = 0 ; i < nhist2-1 ; i ++){
+            frequency_hist_biggest_min[i] = sslot_freq2.values[i+1] ;
+        }
+
+        
+        for (int i = 0; i < nhist1-1; i++)
+        {
+            int beg = (i*small_width-distance)/biggest_width ;
+
+            div_t div_end = div((i+1)*small_width-distance, biggest_width) ;
+            int end = div_end.quot  ;
+            if(!div_end.rem ){
+                end ++ ;
+            }
+
+            for (int j = beg; j < end; j++)
+            {
+                if (j > -1 && j < nhist2-1)
+                {
+                    double a = DatumGetFloat8(frequency_hist_smallest_min[i]) ;
+                    double b = DatumGetFloat8(frequency_hist_biggest_min[j]) ;
+                    double c = a*b ;
+                    cardinality_estimation += c ;
+                }
+            }
+        }
     }
-    printf("Join cardinality estimation without post-processing : %f \n\n", cardinality_estimation) ;
+
+  
+
+    printf("Join cardinality estimation : %f \n", cardinality_estimation) ;
+
     
-
-    double average1 ;
-    double average2 ;
-    double total_sum = 0 ;
-    double nb_zeros = 0 ;
-
-    for (int i = 0; i < nhist_smallest; i++)
-    {
-        total_sum += DatumGetFloat8(frequency_hist_smallest_values[i]) ;
-        if (!DatumGetFloat8(frequency_hist_smallest_values[i]))
-        {
-            nb_zeros ++ ;
-        }
-    }
-
-    average1 = total_sum/(nhist_smallest-nb_zeros) ;
-
-    total_sum = nb_zeros = 0 ;    
-    for (int i = 0; i < nhist_largest; i++)
-    {
-        total_sum += DatumGetFloat8(frequency_hist_largest_values[i]) ;
-        if (!DatumGetFloat8(frequency_hist_largest_values[i]))
-        {
-            nb_zeros ++ ;
-        }
-    }
-    average2 = total_sum/(nhist_smallest-nb_zeros) ;
-
-
-    double dampening_factor1 = log(average1) * log(average2)/sqrt(log((nhist_smallest + nhist_largest)/2)) ;
-    printf("Cardinality estimation 1 : %f \n", cardinality_estimation/dampening_factor1) ;
-
-    double dampening_factor2 = sqrt(pow(average1, 2) + pow(average2, 2)) ;
-    printf("Cardinality estimation 2 : %f \n", cardinality_estimation/dampening_factor2) ;
-
-    // double dampening_factor1 = log(average1 * average2)/sqrt((average1*average2)) ;
-    // printf("Cardinality estimation 1 : %f \n", cardinality_estimation/dampening_factor1) ;
-
-
-    //Print of frequency histograms
-    printf("hist_frequency_1 = [");
-    for (i = 0; i < nhist1-1; i++)
-    {
-        double frequency = DatumGetFloat8(frequency_hist_smallest_values[i]) ;
-        printf("%f", frequency) ;
-        if (i < nhist1 - 2)
-            printf(", ");
-    }
-    printf("]\n\n");
-    printf("hist_frequency_2 = [");
-    for (i = 0; i < nhist2-1; i++)
-    {
-        double frequency = DatumGetFloat8(frequency_hist_largest_values[i]) ;
-        printf("%f", frequency) ;
-        if (i < nhist2 - 2)
-            printf(", ");
-    }
-    printf("]\n");
-
-    fflush(stdout);
-
-    // Result : on a bien les largeurs en index 0
-
-    pfree(frequency_hist_smallest_values);
-    pfree(frequency_hist_largest_values);
-
-    free_attstatsslot(&sslot1);
-    free_attstatsslot(&sslot2);
+    free_attstatsslot(&sslot_freq1);
+    free_attstatsslot(&sslot_freq2);
+    free_attstatsslot(&sslot_bound1);
+    free_attstatsslot(&sslot_bound2);
 
     ReleaseVariableStats(vardata1);
     ReleaseVariableStats(vardata2);
@@ -392,6 +307,45 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     CLAMP_PROBABILITY(selec);
     PG_RETURN_FLOAT8((float8) selec);
 }
+
+float8 join_estimation(int nhist_small, int nhist_big, AttStatsSlot sslot_freq_small, AttStatsSlot sslot_freq_big, float8 small_width, float8 biggest_width, float8 distance){
+    float8 cardinality_estimation = 0 ;
+    Datum *frequency_hist_smallest_min, *frequency_hist_biggest_min ;
+    frequency_hist_smallest_min = (Datum *) palloc(sizeof(Datum) * (nhist_small-1));
+    frequency_hist_biggest_min = (Datum *) palloc(sizeof(Datum) * (nhist_big-1));
+
+    // Histogram filling
+    for (int i = 0 ; i < nhist_small-1 ; i ++){
+        frequency_hist_smallest_min[i] = sslot_freq_small.values[i+1] ;
+    }
+    for (int i = 0 ; i < nhist_big-1 ; i ++){
+        frequency_hist_biggest_min[i] = sslot_freq_big.values[i+1] ;
+    }
+
+    
+    for (int i = 0; i < nhist_small-1; i++)
+    {
+        int beg = (i*small_width-distance)/biggest_width ;
+
+        div_t div_end = div((i+1)*small_width-distance, biggest_width) ;
+        int end = div_end.quot  ;
+        if(!div_end.rem ){
+            end ++ ;
+        }
+
+        for (int j = beg; j < end; j++)
+        {
+            if (j > -1 && j < nhist_big-1)
+            {
+                double a = DatumGetFloat8(frequency_hist_smallest_min[i]) ;
+                double b = DatumGetFloat8(frequency_hist_biggest_min[j]) ;
+                double c = a*b ;
+                cardinality_estimation += c ;
+            }
+        }
+    }
+}
+
 
 Datum
 rangeoverlapsjoinsel_v1(PG_FUNCTION_ARGS)
