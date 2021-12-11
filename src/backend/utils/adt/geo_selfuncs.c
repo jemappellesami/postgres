@@ -318,24 +318,24 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
 
 
     //Print of frequency histograms
-    // printf("hist_frequency_1 = [");
-    // for (i = 0; i < nhist1-1; i++)
-    // {
-    //     double frequency = DatumGetFloat8(frequency_hist_smallest_values[i]) ;
-    //     printf("%f", frequency) ;
-    //     if (i < nhist1 - 2)
-    //         printf(", ");
-    // }
-    // printf("]\n\n");
-    // printf("hist_frequency_2 = [");
-    // for (i = 0; i < nhist2-1; i++)
-    // {
-    //     double frequency = DatumGetFloat8(frequency_hist_largest_values[i]) ;
-    //     printf("%f", frequency) ;
-    //     if (i < nhist2 - 2)
-    //         printf(", ");
-    // }
-    // printf("]\n");
+    printf("hist_frequency_1 = [");
+    for (i = 0; i < nhist1-1; i++)
+    {
+        double frequency = DatumGetFloat8(frequency_hist_smallest_values[i]) ;
+        printf("%f", frequency) ;
+        if (i < nhist1 - 2)
+            printf(", ");
+    }
+    printf("]\n\n");
+    printf("hist_frequency_2 = [");
+    for (i = 0; i < nhist2-1; i++)
+    {
+        double frequency = DatumGetFloat8(frequency_hist_largest_values[i]) ;
+        printf("%f", frequency) ;
+        if (i < nhist2 - 2)
+            printf(", ");
+    }
+    printf("]\n");
 
     fflush(stdout);
 
@@ -481,4 +481,3 @@ rangeoverlapsjoinsel_prof(PG_FUNCTION_ARGS)
     CLAMP_PROBABILITY(selec);
     PG_RETURN_FLOAT8((float8) selec);
 }
-

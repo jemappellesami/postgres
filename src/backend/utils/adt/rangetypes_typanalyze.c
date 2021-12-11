@@ -111,7 +111,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	int			num_hist;
 
 	// Maximum value in the range column, comes from DatumGetInt16
-	int16 		maxValue ; // [frequency histogram]
+	int32 		maxValue ; // [frequency histogram]
 	
 	float8	   *lengths,
 				*frequencies; // [frequency histogram]
@@ -196,13 +196,16 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			currentUpperBound = DatumGetInt16(upper.val) ;
 			currentMax = DatumGetInt16(max_bound.val) ;
 
-			range_cmp_bounds(&typcache, &upper, &max_bound)  ;
-			// if(range_cmp_bounds(&typcache, &upper, &max_bound) > 0){
+			if(range_cmp_bounds(typcache, &upper, &max_bound) > 0){
+				printf("upper, %d\n", DatumGetInt32(upper.val)); // Put 32 bits or else it will not be able to compute for big values
+				printf("max_bound, %d\n", DatumGetInt32(max_bound.val));
+				printf("compare %d\n", range_cmp_bounds(typcache, &upper, &max_bound))  ;
+				max_bound = upper ;
+				fflush(stdout);
+			}
+			// if(currentUpperBound > currentMax){
 			// 	max_bound = upper ;
 			// }
-			if(currentUpperBound > currentMax){
-				max_bound = upper ;
-			}
 			
 
 			// On a les bound min et max
@@ -248,7 +251,7 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 	}
 
 	// [frequency histogram]
-	maxValue = DatumGetInt16(max_bound.val) ;
+	maxValue = DatumGetInt32(max_bound.val) ;
 	printf("Final maximum : %d \n", maxValue) ;
 	fflush(stdout) ;
 
