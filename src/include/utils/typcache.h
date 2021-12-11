@@ -100,6 +100,9 @@ typedef struct TypeCacheEntry
 	FmgrInfo	rng_canonical_finfo;	/* canonicalization function, if any */
 	FmgrInfo	rng_subdiff_finfo;	/* difference function, if any */
 
+	// add a function for "and", extend it for range types
+	// rangetype should have a functino "add", we only need to expose it here in typcache
+
 	/*
 	 * Domain's base type and typmod if it's a domain type.  Zeroes if not
 	 * domain, or if information hasn't been requested.

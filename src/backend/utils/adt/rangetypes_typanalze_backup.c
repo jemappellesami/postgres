@@ -160,18 +160,6 @@ compute_range_stats(VacAttrStats *stats, AnalyzeAttrFetchFunc fetchfunc,
 			uppers[non_empty_cnt] = upper;
 			
 
-			
-			// printf("Lower : %d\n", lower) ;
-			// fflush(stdout) ;
-			// printf("Upper : %d\n", upper) ;
-			// fflush(stdout) ;
-			// printf("Total width increment : %d\n", VARSIZE_ANY(DatumGetPointer(value))) ;
-			// fflush(stdout) ;
-			
-			// printf("%d\n", lower) ;
-			// fflush(stdout) ;
-			
-
 			if (lower.infinite || upper.infinite)
 			{
 				/* Length of any kind of an infinite range is infinite */
