@@ -1,18 +1,18 @@
 /*-------------------------------------------------------------------------
  *
  * geo_selfuncs.c
- *	  Selectivity routines registered in the operator catalog in the
- *	  "oprrest" and "oprjoin" attributes.
+ *    Selectivity routines registered in the operator catalog in the
+ *    "oprrest" and "oprjoin" attributes.
  *
  * Portions Copyright (c) 1996-2020, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
  * IDENTIFICATION
- *	  src/backend/utils/adt/geo_selfuncs.c
+ *    src/backend/utils/adt/geo_selfuncs.c
  *
- *	XXX These are totally bogus.  Perhaps someone will make them do
- *	something reasonable, someday.
+ *  XXX These are totally bogus.  Perhaps someone will make them do
+ *  something reasonable, someday.
  *
  *-------------------------------------------------------------------------
  */
@@ -31,21 +31,21 @@
 #include "utils/rangetypes.h"
 
 /*
- *	Selectivity functions for geometric operators.  These are bogus -- unless
- *	we know the actual key distribution in the index, we can't make a good
- *	prediction of the selectivity of these operators.
+ *  Selectivity functions for geometric operators.  These are bogus -- unless
+ *  we know the actual key distribution in the index, we can't make a good
+ *  prediction of the selectivity of these operators.
  *
- *	Note: the values used here may look unreasonably small.  Perhaps they
- *	are.  For now, we want to make sure that the optimizer will make use
- *	of a geometric index if one is available, so the selectivity had better
- *	be fairly small.
+ *  Note: the values used here may look unreasonably small.  Perhaps they
+ *  are.  For now, we want to make sure that the optimizer will make use
+ *  of a geometric index if one is available, so the selectivity had better
+ *  be fairly small.
  *
- *	In general, GiST needs to search multiple subtrees in order to guarantee
- *	that all occurrences of the same key have been found.  Because of this,
- *	the estimated cost for scanning the index ought to be higher than the
- *	output selectivity would indicate.  gistcostestimate(), over in selfuncs.c,
- *	ought to be adjusted accordingly --- but until we can generate somewhat
- *	realistic numbers here, it hardly matters...
+ *  In general, GiST needs to search multiple subtrees in order to guarantee
+ *  that all occurrences of the same key have been found.  Because of this,
+ *  the estimated cost for scanning the index ought to be higher than the
+ *  output selectivity would indicate.  gistcostestimate(), over in selfuncs.c,
+ *  ought to be adjusted accordingly --- but until we can generate somewhat
+ *  realistic numbers here, it hardly matters...
  */
 
 
@@ -56,17 +56,17 @@
 Datum
 areasel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.005);
+    PG_RETURN_FLOAT8(0.005);
 }
 
 Datum
 areajoinsel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.005);
+    PG_RETURN_FLOAT8(0.005);
 }
 
 /*
- *	positionsel
+ *  positionsel
  *
  * How likely is a box to be strictly left of (right of, above, below)
  * a given box?
@@ -75,17 +75,17 @@ areajoinsel(PG_FUNCTION_ARGS)
 Datum
 positionsel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.1);
+    PG_RETURN_FLOAT8(0.1);
 }
 
 Datum
 positionjoinsel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.1);
+    PG_RETURN_FLOAT8(0.1);
 }
 
 /*
- *	contsel -- How likely is a box to contain (be contained by) a given box?
+ *  contsel -- How likely is a box to contain (be contained by) a given box?
  *
  * This is a tighter constraint than "overlap", so produce a smaller
  * estimate than areasel does.
@@ -94,13 +94,13 @@ positionjoinsel(PG_FUNCTION_ARGS)
 Datum
 contsel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.001);
+    PG_RETURN_FLOAT8(0.001);
 }
 
 Datum
 contjoinsel(PG_FUNCTION_ARGS)
 {
-	PG_RETURN_FLOAT8(0.001);
+    PG_RETURN_FLOAT8(0.001);
 }
 
 float8 join_estimation(int nhist_small, int nhist_big, AttStatsSlot sslot_freq_small, AttStatsSlot sslot_freq_big, float8 small_width, float8 biggest_width, float8 distance) ;
@@ -244,8 +244,8 @@ rangeoverlapsjoinsel(PG_FUNCTION_ARGS)
     
     // computes the distance between the minimum of each tables.
     float8 distance = abs(DatumGetFloat8(FunctionCall2Coll(&typcache->rng_subdiff_finfo,
-														  typcache->rng_collation,
-														  min_bound1.val, min_bound2.val)));
+                                                          typcache->rng_collation,
+                                                          min_bound1.val, min_bound2.val)));
 
     // We try to find which tables has the lowestt minimum
     int cmp_res = range_cmp_bounds(typcache, &min_bound1, &min_bound2) ;
@@ -319,10 +319,8 @@ float8 join_estimation(int nhist_small, int nhist_big, AttStatsSlot sslot_freq_s
     }
 
 
-    double average1 ;
-    double average2 ;
     double total_sum = 0 ;
-    double nb_zeros = 0 ;
+
     // gets the theoretical total number of rows of the frequency histogram to compute the average numbers of rows per bins
     // in the frequency histogram.
     for (int i = 0; i < nhist_small; i++)
@@ -330,27 +328,49 @@ float8 join_estimation(int nhist_small, int nhist_big, AttStatsSlot sslot_freq_s
         total_sum += DatumGetFloat8(frequency_hist_smallest_min[i]) ;
     }
 
-    average1 = total_sum/(nhist_small-nb_zeros) ;
+    //computes the entropy of the histogram with the lowest value and the theoretical maximum entropy of that histogram 
+    float8 entropy_low = 0 ;
+    float8 max_entropy_low = 0 ;
+    float8 probability_low = (float8) 1/nhist_small ;
+    for (int i = 0; i < nhist_small; i++)
+    {
+        float8 current_frequency = DatumGetFloat8(frequency_hist_smallest_min[i]) ;
+        float8 current_probability = current_frequency/total_sum;
 
-    total_sum = nb_zeros = 0 ;    
+        max_entropy_low -= probability_low*log2(probability_low) ;
+
+        if(current_frequency>0){
+            entropy_low -= current_probability*log2(current_probability) ;
+        }
+    }
+
+
+    total_sum = 0 ; 
+
     for (int i = 0; i < nhist_big; i++)
     {
         total_sum += DatumGetFloat8(frequency_hist_biggest_min[i]) ;
-        if (!DatumGetFloat8(frequency_hist_biggest_min[i]))
-        {
-            nb_zeros ++ ;
+    }
+
+    // Entropy
+    float8 entropy_high = 0 ;
+    float8 max_entropy_high = 0 ;
+    float8 probability_high = (float8) 1/nhist_big ;
+
+
+    for (int i = 0; i < nhist_big; i++)
+    {
+        float8 current_frequency = DatumGetFloat8(frequency_hist_biggest_min[i]) ;
+        float8 current_probability = current_frequency/ total_sum ;
+
+        max_entropy_high -= probability_high*log2(probability_high) ;
+
+        if(current_frequency>0){
+            entropy_high -= current_probability*log2(current_probability) ;
         }
     }
-    average2 = total_sum/(nhist_big-nb_zeros) ;
 
-    printf("Cardinality estimation without dampening : %f \n", cardinality_estimation) ;
+    double dampening_factor = pow((max_entropy_high/entropy_high) * (max_entropy_low/entropy_low), 4.25) ;
 
-    // first dampening factor the sharpen our estimation.
-    double dampening_factor1 = log(average1) * log(average2)/sqrt(log((nhist_small + nhist_big)/2)) ;
-    printf("Cardinality estimation 1 : %f \n", cardinality_estimation/dampening_factor1) ;
-    // second dampening factor.
-    double dampening_factor2 = sqrt(pow(average1, 2) + pow(average2, 2)) ;
-    printf("Cardinality estimation 2 : %f \n", cardinality_estimation/dampening_factor2) ;
-
-    return cardinality_estimation/dampening_factor1 ;
+    return cardinality_estimation/dampening_factor ;
 }

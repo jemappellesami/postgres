@@ -205,14 +205,13 @@ rangeoverlapsofsel(TypeCacheEntry *typcache, const RangeBound *constlower, const
 	/*
 	 * Gets the index that corresponds to the lowerbound and upperbound value corresponds to in the frequency histogram.
 	 */													  
-	int lower_index 		= div((column_length-compLower), width).quot ;
+	int lower_index 		= div((column_length-compLower), width).quot - 1;
 	div_t upper_index_div 	= div((column_length-compUpper), width);
-	int upper_index 		= upper_index_div.quot ;
+	int upper_index 		= upper_index_div.quot + 1;
 
 	if (upper_index_div.rem>0){
 		upper_index++;
 	}
-
 
 	/*
 	 * Filters the index : 
